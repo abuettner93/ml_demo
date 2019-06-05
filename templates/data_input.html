@@ -1,0 +1,41 @@
+<title>Data Submission Form</title>
+        	 	<link rel="stylesheet" media="screen" href="static/bootstrap.min.css">
+<!--         	 	<link rel="stylesheet" href="static/bootstrap-theme.min.css"> -->
+       <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<div class="container">
+<h2>Iris ML API Input Form</h2>
+<form action="" method="post" role="form">
+<!--     { { form.csrf }} -->
+<div class="form-group">
+<label for="sepal_length">Sepal Length:</label>
+<input type="decimal" class="form-control" id="sl" name="sepal_length" placeholder="Length of the Sepal">
+
+<label for="sepal_width">Sepal Width:</label>
+<input type="decimal" class="form-control" id="sw" name="sepal_width" placeholder="Width of the Sepal">
+
+<label for="petal_length">Petal Length:</label>
+<input type="decimal" class="form-control" id="pl" name="petal_length" placeholder="Length of the Petal">
+
+<label for="petal_width">Petal Width:</label>
+<input type="decimal" class="form-control" id="pw" name="petal_width" placeholder="Width of the Petal">
+
+
+</div>
+<button type="submit" class="btn btn-success">Identify</button>
+</form>{% with messages = get_flashed_messages(with_categories=true) %}
+{% if messages %}
+
+{% for message in messages %}
+{% if "Error" not in message[1]: %}
+<div class="alert alert-info">
+                <strong>{{ message[1] }}</strong></div>
+{% endif %}
+
+{% if "Error" in message[1]: %}
+<div class="alert alert-warning">{{ message[1] }}</div>
+{% endif %}
+{% endfor %}
+{% endif %}
+{% endwith %}
+
+</div>
