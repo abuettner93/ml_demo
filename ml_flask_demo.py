@@ -8,9 +8,13 @@
 ####################################
 
 import numpy as np
-from flask import Flask, render_template, flash, request, abort, jsonify
+from flask import Flask, render_template, flash, request, abort, jsonify, url_for, session, redirect
 from wtforms import Form, TextField, TextAreaField, validators, StringField, SubmitField
+import bcrypt
 import pickle
+from flask_pymongo import PyMongo
+
+
 
 my_random_forest = pickle.load(open("iris_rfc.pkl", 'rb'))
 
@@ -19,6 +23,8 @@ DEBUG = True
 app = Flask(__name__)
 app.config.from_object(__name__)
 app.config['SECRET_KEY'] = '7d441f27d441f27567d441f2b6176a'
+app.config["MONGO_URI"] = "mongodb://localhost:27017/flaskdb"
+mongo = PyMongo(app)
 
 
 # class ReusableForm(Form):
@@ -44,6 +50,97 @@ app.config['SECRET_KEY'] = '7d441f27d441f27567d441f2b6176a'
 #         flash('Error: All the form fields are required. ')
 
 #     return render_template('register.html', form=form)
+
+
+
+@app.route('/')
+def index():
+    if ('username' in session) and ('active' in session):
+        return render_template('home.html', username=session['username'])
+#         return 'You are logged in as ' + session['username']
+
+    return render_template('home.html', username = "")
+
+@app.route('/login', methods=['POST', 'GET'])
+def login():
+    if request.method == 'POST':
+        if 'username' in session:
+            logout()
+        users = mongo.db.users
+        login_user = users.find_one({'username' : request.form['username']})
+
+        if login_user:
+            if bcrypt.hashpw(request.form['password'].encode('utf-8'), login_user['password']) == login_user['password']:
+                users.update({'username' : request.form['username']}, {'$set': { 'active' : True  }})
+                session['username'] = request.form['username']
+                session['active'] = True
+                return redirect(url_for('index'))
+
+        return 'Invalid username/password combination'
+    return render_template('login.html')
+
+@app.route('/register', methods=['POST', 'GET'])
+def register():
+    if request.method == 'POST':
+        users = mongo.db.users
+        existing_user = users.find_one({'username' : request.form['username']})
+
+        if existing_user is None:
+            hashpass = bcrypt.hashpw(request.form['password'].encode('utf-8'), bcrypt.gensalt())
+            users.insert({'username' : request.form['username'], 'password' : hashpass, 'active': True})
+            session['username'] = request.form['username']
+            session['active'] = True
+            return redirect(url_for('index'))
+        
+        return 'That username already exists!'
+
+    return render_template('register.html')
+@app.route('/logout', methods = ['GET', 'POST'])
+def logout():
+    if ('username' in session) and ('active' in session):
+        users = mongo.db.users
+        current_user = session['username']
+        users.update({'username':current_user}, {'$set' : { 'active' : False  }})
+        session.clear()
+    return redirect(url_for('index'))
+        
+
+@app.route('/mongo')
+def mongo_test():
+    if 'username' in session:
+        online_users = mongo.db.users.find({'active': True})
+        user_list = [doc['username'] for doc in online_users]
+        print(user_list)
+        return render_template("active_user_list.html",
+            names=user_list)
+    return render_template("active_user_list.html")
+
+@app.route('/ml_api', methods = ['GET','POST'])
+def make_predict(data_in = None):
+    if request.method == 'GET':
+        return home()
+    else:
+        if data_in != None:
+            predict_request = np.array(data_in)
+        else:
+        #######all kinds of error checking should go here#######
+            data = request.get_json(force = True)
+            #Parse our request json into a list of values
+            predict_request = [data['sl'], data['sw'], data['pl'], data['pw']]
+    #         print(predict_request)
+            #Convert our list to a numpy array
+            predict_request = np.array(predict_request)
+#         print(predict_request)
+        #Reshape into 1d array
+        predict_request = np.transpose(predict_request).reshape(-1, 4)
+        #Assign prediction value to y_hat
+        y_hat = my_random_forest.predict(predict_request)
+        print(y_hat)
+        if data_in != None:
+            return np.array(["Setosa","Versicolour","Virginica"])[y_hat][0]
+        #Return our prediction to the user
+        output = {'y_hat': str(list(y_hat[:]))}
+        return  jsonify(results = output)
 
 class PredictForm(Form):
     sl = TextField('Sepal Length:')#, validators=[validators.NumberRange(min=0, max=10)])
@@ -84,56 +181,6 @@ def predict_form():
         print(form.errors)
         flash('Error: All the form fields are required to be numbers between 0.0 and 10.0')
 
-    return render_template('data_input.html', form=form)
-
-
-  
-@app.route('/', methods=['GET'])
-def root():
-    return home()
-    
-@app.route('/home', methods = ['GET'])
-def home():
-    return """
-<!DOCTYPE html>
-<head>
-   <title>Iris Identification Machine Learning Model</title>
-   <link rel="stylesheet" href="http://stash.compjour.org/assets/css/foundation.css">
-</head>
-<body style="width: 880px; margin: auto;">  
-    <h1>Iris Dataset Machine Learning Web Service</h1>
-    <p>You have reached the Iris machine learning web service. This web API allows you to figure out what kind of flower you have based on some input parameters. So break out the rulers and see what math and science can do.</p>
-    <p>And here's an image:</p>
-    <a data-flickr-embed="true"  href="https://www.flickr.com/photos/martinlabar/137433273/" title="Blue and white iris"><img src="https://live.staticflickr.com/53/137433273_6bc2fce01c_b.jpg" width="1024" height="768" alt="Blue and white iris"></a><script async src="//embedr.flickr.com/assets/client-code.js" charset="utf-8"></script>
-</body>
-"""
-
-@app.route('/ml_api', methods = ['GET','POST'])
-def make_predict(data_in = None):
-    if request.method == 'GET':
-        return home()
-    else:
-        if data_in != None:
-            predict_request = np.array(data_in)
-        else:
-        #######all kinds of error checking should go here#######
-            data = request.get_json(force = True)
-            #Parse our request json into a list of values
-            predict_request = [data['sl'], data['sw'], data['pl'], data['pw']]
-    #         print(predict_request)
-            #Convert our list to a numpy array
-            predict_request = np.array(predict_request)
-#         print(predict_request)
-        #Reshape into 1d array
-        predict_request = np.transpose(predict_request).reshape(-1, 4)
-        #Assign prediction value to y_hat
-        y_hat = my_random_forest.predict(predict_request)
-        print(y_hat)
-        if data_in != None:
-            return np.array(["Setosa","Versicolour","Virginica"])[y_hat][0]
-        #Return our prediction to the user
-        output = {'y_hat': str(list(y_hat[:]))}
-        return  jsonify(results = output)
-
+    return render_template('data_input.html', form=form)    
 if __name__ == '__main__':
     app.run(port = 9000, debug = True, use_reloader=True)
